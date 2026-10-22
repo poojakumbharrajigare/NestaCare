@@ -1,0 +1,9 @@
+# NestaCare local development services.
+#
+# Placeholder only: no services are defined yet, so `docker compose up` starts nothing.
+# PostgreSQL configuration will be added during the implementation phase,
+# followed by the backend and frontend services.
+
+name: nestacare
+
+services: {}
