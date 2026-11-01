@@ -3,8 +3,9 @@
 | Field      | Value                                                                                 |
 | ---------- | ------------------------------------------------------------------------------------- |
 | Document   | Requirements specification (Phase 2)                                                  |
-| Status     | **Draft — awaiting review**                                                           |
-| Version    | 0.2 — open questions Q-1 … Q-11 resolved with proposed defaults                       |
+| Status     | **Approved**                                                                          |
+| Approved   | Pooja Kumbhar, 2026-10-31                                                             |
+| Version    | 1.0 (0.2 — open questions Q-1 … Q-11 resolved with proposed defaults)                 |
 | Date       | 2026-10-31                                                                            |
 | Stack      | React + TypeScript + Vite · Java 21 + Spring Boot (modular monolith) · PostgreSQL     |
 | Next phase | Architecture and HLD (`docs/architecture/`, `docs/hld/`) — starts only after approval |

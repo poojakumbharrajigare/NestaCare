@@ -1,12 +1,12 @@
 # ADR-001: Use a modular monolith for the NestaCare MVP backend
 
-| Field      | Value |
-|------------|-------|
-| Status     | **Proposed — awaiting approval** |
-| Date       | 2026-10-31 |
-| Deciders   | Product owner / tech lead (approval pending) |
+| Field      | Value                                                                                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Status     | **Accepted** (2026-10-31)                                                                                                                                                |
+| Date       | 2026-10-31                                                                                                                                                               |
+| Deciders   | Pooja Kumbhar (approved 2026-10-31)                                                                                                                                      |
 | Related    | [Architecture options](../architecture/architecture-options.md), [Requirements](../requirements/requirements.md) (NFR-06, NFR-07, NFR-16, NFR-17, NFR-18, Q-6, R-4, R-7) |
-| Supersedes | — |
+| Supersedes | —                                                                                                                                                                        |
 
 ## Context
 
@@ -32,17 +32,31 @@ Build the backend as **one Spring Boot (Java 21) application, deployed as one Do
 
 Full module definitions, dependency rules and the extraction path are in [architecture-options.md §7–8](../architecture/architecture-options.md#7-module-boundaries).
 
+### Technology stack
+
+The modular monolith is built and run with the stack below. Each choice was compared with its alternatives in [architecture-options.md §9](../architecture/architecture-options.md#9-technology-choices).
+
+| Area                   | Chosen                                             | Why                                                                                                                                                              | Main alternative rejected, and why                                                                                          |
+| ---------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Frontend               | React, TypeScript, Vite                            | Static SPA on S3 + CloudFront needs no server. Largest ecosystem and hiring pool. Vite keeps the bundle small (NFR-03). Strict TypeScript is required by the DoD | Next.js: server rendering needs a Node.js runtime, which adds cost and a second backend runtime                             |
+| Backend                | Java 21, Spring Boot                               | Spring Modulith gives boundary checks and the transactional outbox this ADR relies on. Spring Security covers FR-AUTH and NFR-08. Java 21 is LTS                 | Node.js (NestJS): no modular-monolith tooling, so boundaries and outbox would be hand-built                                 |
+| Database               | PostgreSQL on RDS                                  | Exclusion constraints on time ranges enforce no overlapping bookings in the database (NFR-07). Schemas per module. Managed backups and PITR (NFR-05)             | MySQL: no exclusion constraints, so overlap checks would rely on application locking                                        |
+| Local development      | Docker Compose                                     | One command for Postgres, Mailpit and the app, using the same Postgres version as RDS (NFR-18)                                                                   | Native installs: version drift and slow onboarding                                                                          |
+| Cloud hosting          | ECS Fargate, RDS, S3 + CloudFront, ECR, CloudWatch | Same container as local with no servers to patch. Managed database. Cheap static hosting with a CDN. IAM-based image pulls. Monitoring built in                  | EKS: control plane cost and Kubernetes upkeep for one service. Lambda: JVM cold starts and poor fit for jobs and the outbox |
+| Infrastructure as code | AWS CDK in TypeScript (approved, OD-7)             | Typed code with high-level ECS/RDS constructs. CloudFormation manages state                                                                                      | Terraform: a separate language plus its own state storage, and multi-cloud isn't needed                                     |
+| CI/CD                  | GitHub Actions                                     | The repo is on GitHub. Checks run on every pull request. OIDC to AWS means no stored AWS keys (CLAUDE.md rule 7)                                                 | AWS CodePipeline: separate from pull requests, with slower feedback                                                         |
+
 ## Rationale
 
-| Criterion | Why the modular monolith wins for this MVP |
-|---|---|
+| Criterion                 | Why the modular monolith wins for this MVP                                                                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Reliability / consistency | Overlap constraints, compare-and-set transitions and commit-time validation stay inside one local ACID transaction. That is the simplest design that provably meets NFR-07 |
-| Development complexity | One codebase, one build, IDE-wide refactoring. Module boundaries keep the code understandable as it grows |
-| Scalability | Stateless instances scale horizontally behind the ALB. That is well beyond what NFR-06 needs. Search can later use a read replica or be extracted first |
-| AWS cost | ≈ $195–205/month per environment (indicative), the same as a traditional monolith and about half of microservices (≈ $430–520) |
-| Testability | Module-scoped integration tests (`@ApplicationModuleTest`), event scenario tests, Testcontainers concurrency tests, and boundary checks built in |
-| Deployment complexity | One image, one pipeline, one Flyway run, simple rollback. Supports "every `main` commit deployable" (NFR-17) |
-| Future migration | Boundaries, APIs, events and schemas already exist. Extraction swaps an adapter and moves one schema. Wrong boundaries are cheap to fix while still in one repo |
+| Development complexity    | One codebase, one build, IDE-wide refactoring. Module boundaries keep the code understandable as it grows                                                                  |
+| Scalability               | Stateless instances scale horizontally behind the ALB. That is well beyond what NFR-06 needs. Search can later use a read replica or be extracted first                    |
+| AWS cost                  | ≈ $195–205/month per environment (indicative), the same as a traditional monolith and about half of microservices (≈ $430–520)                                             |
+| Testability               | Module-scoped integration tests (`@ApplicationModuleTest`), event scenario tests, Testcontainers concurrency tests, and boundary checks built in                           |
+| Deployment complexity     | One image, one pipeline, one Flyway run, simple rollback. Supports "every `main` commit deployable" (NFR-17)                                                               |
+| Future migration          | Boundaries, APIs, events and schemas already exist. Extraction swaps an adapter and moves one schema. Wrong boundaries are cheap to fix while still in one repo            |
 
 ## Alternatives considered and rejected
 
@@ -71,13 +85,15 @@ This option is **deferred, not ruled out**: modules can be extracted one at a ti
 
 ### Variants considered inside the modular monolith
 
-| Variant | Decision | Reason |
-|---|---|---|
-| One shared schema, boundaries by package only | Rejected | Nothing stops cross-module joins, and extraction needs the data split anyway |
-| Separate database per module (in one app) | Rejected | Loses the single transaction for booking-creation reads, and adds RDS cost with no MVP benefit |
-| Message broker (SNS/SQS) from day one | Rejected | The Postgres outbox gives reliable async delivery without new AWS resources. Externalize events only when a module is extracted |
-| Separate `admin` and `review` modules | Rejected for now | Too little logic to justify. Placed in the modules that own the data. Can be split later at low cost |
-| ArchUnit only, hand-written outbox | Fallback | Use if Spring Modulith turns out unsuitable (open decision OD-3) |
+| Variant                                       | Decision         | Reason                                                                                                                          |
+| --------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| One shared schema, boundaries by package only | Rejected         | Nothing stops cross-module joins, and extraction needs the data split anyway                                                    |
+| Separate database per module (in one app)     | Rejected         | Loses the single transaction for booking-creation reads, and adds RDS cost with no MVP benefit                                  |
+| Message broker (SNS/SQS) from day one         | Rejected         | The Postgres outbox gives reliable async delivery without new AWS resources. Externalize events only when a module is extracted |
+| Separate `admin` and `review` modules         | Rejected for now | Too little logic to justify. Placed in the modules that own the data. Can be split later at low cost                            |
+| ArchUnit only, hand-written outbox            | Fallback         | Spring Modulith approved (OD-3); use this only if it turns out unsuitable                                                       |
+
+Rejected technology alternatives (Angular, Vue, Kotlin, .NET, Go, MySQL, DynamoDB, EKS, Lambda, Terraform, Jenkins and others) are listed with reasons in [architecture-options.md §9](../architecture/architecture-options.md#9-technology-choices).
 
 ## Consequences
 
@@ -94,8 +110,11 @@ This option is **deferred, not ruled out**: modules can be extracted one at a ti
 - **Discipline needed.** Boundary rules add some upfront design to every cross-module feature, and CI checks must be kept strict.
 - **Search staleness.** The search list reads an event-fed projection (≤ 60 s stale, as AC-SRCH-06 allows). The profile calendar and booking always check live data.
 - **Dependency on Spring Modulith** for boundary checks and the outbox. ArchUnit and a hand-written outbox are the fallback.
+- **JVM memory.** Each Fargate task needs about 1 GB, more than Go or Node would. At MVP load this is a small cost.
+- **SPA and SEO.** Public provider pages get less SEO benefit than server rendering would give. SEO isn't an MVP goal, and prerendering can be added later.
+- **AWS lock-in.** Only `infrastructure/` is AWS-specific. The app is a standard container on standard PostgreSQL.
 
-### Follow-ups (after approval)
+### Follow-ups
 1. ~~Update `requirements.md` Q-6 with the module ownership decided here.~~ Done in requirements v0.2 (2026-10-31).
 2. HLD per module in `docs/hld/`, including API operations, event payloads and the auth token style (OD-5).
 3. Separate ADRs for: booking concurrency and constraints (EC-23 … EC-29), and deployment topology and cost (Multi-AZ RDS, NAT vs VPC endpoints, staging) — **for cost approval before any AWS resources are created**.

@@ -11,12 +11,13 @@ NestaCare is a household services marketplace.
 - View customer bookings and statuses
 
 ## Technology
-- Java 21, Spring Boot
+- Java 21, Spring Boot, Spring Modulith
 - React, TypeScript, Vite
 - PostgreSQL
 - Docker, AWS ECS Fargate
 - S3, CloudFront, RDS, ECR, CloudWatch
-- AWS CDK
+- AWS CDK (TypeScript)
+- GitHub Actions (CI/CD)
 
 ## Architecture
 - Modular monolith for MVP
